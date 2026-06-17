@@ -1,0 +1,34 @@
+{
+  "id": "wa-koi-default",
+  "name": "Wa-Koi Default",
+  "status": "code_generated_mvp",
+  "sourcePolicy": "original_assets_only",
+  "inspiration": [
+    "Japanese summer visual novel",
+    "shrine-town warmth",
+    "developer desk at dusk"
+  ],
+  "tokens": {
+    "radius": 8,
+    "dialogueBackdrop": "rgba(32, 20, 18, 0.88)",
+    "nameplateStyle": "compact",
+    "stageLighting": "warm_evening"
+  },
+  "plannedAssets": {
+    "backgrounds": [
+      "summer-study-room-evening.png",
+      "shrine-path-afternoon.png",
+      "developer-bedroom-night.png"
+    ],
+    "characters": [
+      "koharu-codex",
+      "shiori-claude",
+      "akari-cursor"
+    ],
+    "sounds": [
+      "message-soft.wav",
+      "task-complete.wav",
+      "agent-thinking-loop.wav"
+    ]
+  }
+}

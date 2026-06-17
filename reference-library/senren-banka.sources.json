@@ -1,0 +1,36 @@
+{
+  "id": "senren-banka-reference",
+  "name": "Senren Banka Reference Index",
+  "policy": "reference_only_no_asset_downloads",
+  "notes": [
+    "This index stores source links and visual-analysis tags only.",
+    "Do not scrape, vendor, commit, or redistribute original Senren Banka images, CGs, UI screenshots, music, logos, or character assets.",
+    "Use this as visual direction for original GalCode themes and user-owned private imports."
+  ],
+  "sources": [
+    {
+      "label": "Yuzusoft official product site",
+      "url": "https://www.yuzu-soft.com/products/senren/",
+      "type": "official_site",
+      "use": ["overall tone", "navigation density", "key art placement", "brand mood"]
+    },
+    {
+      "label": "Yuzusoft official character page",
+      "url": "https://www.yuzu-soft.com/products/senren/chara.html",
+      "type": "official_site",
+      "use": ["character-card layout", "pose/expression taxonomy", "costume presentation"]
+    },
+    {
+      "label": "Official English/Chinese publisher site",
+      "url": "https://senren.nekonyansoft.com/",
+      "type": "official_publisher_site",
+      "use": ["localized site structure", "safe public metadata", "publisher copyright signal"]
+    },
+    {
+      "label": "Steam store page",
+      "url": "https://store.steampowered.com/app/1144400/SenrenBanka/",
+      "type": "store_page",
+      "use": ["public screenshots for manual visual study", "genre positioning", "store copy tone"]
+    }
+  ]
+}
