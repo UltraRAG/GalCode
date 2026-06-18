@@ -1,7 +1,9 @@
 export type AgentMode = "interactive" | "oneshot";
+export type AgentKind = "cli" | "chat";
 
 export type AgentConfig = {
   id: string;
+  kind?: AgentKind;
   name: string;
   characterName: string;
   role: string;
@@ -12,6 +14,11 @@ export type AgentConfig = {
   modelNote: string;
   portraitPath?: string;
   custom?: boolean;
+  apiUrl?: string;
+  apiKey?: string;
+  model?: string;
+  systemPrompt?: string;
+  temperature?: number;
 };
 
 export type TranscriptEntry = {
@@ -41,11 +48,18 @@ export type GalCodeState = {
   workspace: string;
   selectedAgentId: string;
   themeId: string;
+  haremMode?: boolean;
   assetPackPath?: string;
   backgroundPath?: string;
   agents: AgentConfig[];
   transcripts: Record<string, TranscriptEntry[]>;
   runs: Record<string, RunRecord[]>;
+};
+
+export type ChatContextEntry = {
+  speaker: "user" | "agent";
+  name: string;
+  text: string;
 };
 
 export type AgentEvent =
@@ -114,6 +128,14 @@ export type GalCodeBridge = {
     workspace: string;
     prompt: string;
   }) => Promise<{ ok: boolean; error?: string }>;
+  chatAgent: (payload: {
+    sessionId: string;
+    runId?: string;
+    agent: AgentConfig;
+    prompt: string;
+    context: ChatContextEntry[];
+    haremMode?: boolean;
+  }) => Promise<{ ok: boolean; text?: string; raw?: string; error?: string }>;
   stopAgent: (sessionId: string) => Promise<{ ok: boolean; stopped: boolean }>;
   onAgentEvent: (callback: (event: AgentEvent) => void) => () => void;
 };

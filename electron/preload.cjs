@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("galcode", {
   exportMarkdown: (payload) => ipcRenderer.invoke("export:markdown", payload),
   startAgent: (payload) => ipcRenderer.invoke("agent:start", payload),
   sendToAgent: (payload) => ipcRenderer.invoke("agent:send", payload),
+  chatAgent: (payload) => ipcRenderer.invoke("agent:chat", payload),
   stopAgent: (sessionId) => ipcRenderer.invoke("agent:stop", sessionId),
   onAgentEvent: (callback) => {
     const handler = (_event, payload) => callback(payload);

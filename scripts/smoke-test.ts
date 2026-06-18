@@ -1,13 +1,17 @@
 import { strict as assert } from "node:assert";
 import {
+  agentKind,
   createCustomAgent,
+  createCompanionAgent,
   defaultAgents,
   echoAgentPatch,
   filePathToAssetUrl,
   formatRawEvent,
   isDefaultAgent,
+  isChatAgent,
   makeSessionMarkdown,
-  mergeTranscriptEntry
+  mergeTranscriptEntry,
+  splitDialoguePages
 } from "../src/core";
 import type { TranscriptEntry } from "../src/types";
 
@@ -25,7 +29,13 @@ assert.equal(customAgent.id, "custom-agent-1");
 assert.equal(customAgent.custom, true);
 assert.equal(customAgent.command, "node");
 assert.equal(customAgent.args, 'scripts/echo-agent.mjs "{prompt}"');
+const companionAgent = createCompanionAgent(defaultAgents);
+assert.equal(companionAgent.kind, "chat");
+assert.equal(isChatAgent(companionAgent), true);
+assert.equal(agentKind(customAgent), "cli");
+assert.match(companionAgent.apiUrl || "", /chat\/completions/);
 assert.deepEqual(echoAgentPatch(), {
+  kind: "cli",
   command: "node",
   args: 'scripts/echo-agent.mjs "{prompt}"',
   mode: "oneshot",
@@ -54,6 +64,19 @@ assert.equal(
 );
 
 assert.equal(formatRawEvent({ type: "output", sessionId: "s", at: "t", stream: "stdout", text: "ok" }), "[stdout] ok");
+
+assert.deepEqual(
+  splitDialoguePages("你好。这里是第二句。第三句。", { maxCharsPerLine: 24, maxLinesPerPage: 2 }),
+  ["你好。\n这里是第二句。", "第三句。"]
+);
+assert.equal(splitDialoguePages("", { maxCharsPerLine: 8, maxLinesPerPage: 2 })[0], "...");
+assert.equal(
+  splitDialoguePages("这是一段会被软切的很长很长很长很长很长的对白。", {
+    maxCharsPerLine: 10,
+    maxLinesPerPage: 1
+  }).length > 1,
+  true
+);
 
 const markdown = makeSessionMarkdown({
   sessionId: "codex:/tmp/project",

@@ -1,22 +1,23 @@
 # GalCode v0.1 Acceptance Checklist
 
-This checklist defines what "first usable version" means for the current GalCode MVP.
+This checklist defines the first usable Web-first GalCode MVP.
 
 ## Product Scope
 
-- GalCode launches as an Electron desktop app.
-- The first screen is the usable visual-novel coding interface, not a landing page.
-- The default roster includes Codex, Claude Code, and Cursor.
-- Each agent appears as a configurable heroine with a character name, accent color, command, args, and mode.
-- Users can add and delete custom local agents.
-- Users can send a message through the dialogue input and receive streamed output as dialogue/system lines.
-- Users can inspect unmodified process output in the raw log panel.
-- Users can stop a running agent process.
-- Users can select a workspace folder.
-- Users can import a local theme folder and auto-bind background/portrait image assets.
-- Users can switch a character to the local Echo Test Agent without external accounts.
-- Each run records status and output character count.
+- GalCode launches as a usable Web visual-novel app with `npm run dev`.
+- The first screen is the actual VN dialogue interface, not a landing page.
+- Users can create API Companion characters with API URL, API key, model, temperature, role, and system prompt.
+- API Companion calls use OpenAI-compatible Chat Completions.
+- Local Web API calls go through `/api/galcode/chat` to avoid browser CORS failures.
+- Browser state persists through localStorage.
+- Web users can choose local background and portrait image files through the browser file picker.
+- The dialogue UI plays model output one or two lines at a time.
+- VN controls are persistent: Back, Next, Auto, Full, History, Raw, Skip.
+- Harem Mode sends one user message to all API Companions in order.
+- Later Harem Mode characters can see earlier character replies.
+- The visible portrait, name, and accent follow the current speaking character.
 - The current session can be exported to Markdown.
+- Desktop Local Bridge remains available for Codex, Claude Code, Cursor Agent, local workspace selection, local image selection, and local theme folder import.
 
 ## Runtime Checks
 
@@ -24,41 +25,50 @@ Run these commands from the repo root:
 
 ```bash
 npm install
-npm run doctor
 npm run test:smoke
 npm run test:runtime
 npm run typecheck
 npm run build
 npm audit --audit-level=critical
 node -c electron/main.cjs && node -c electron/agent-runtime.cjs && node -c electron/preload.cjs
+```
+
+Expected result:
+
+- `test:smoke` prints `smoke ok`.
+- `test:runtime` prints `runtime ok`.
+- `typecheck` passes.
+- `build` passes and includes sample Web assets.
+- `npm audit --audit-level=critical` reports no critical vulnerabilities.
+
+Desktop bridge check:
+
+```bash
 npm run start:desktop
 ```
 
 Expected result:
 
-- `doctor` passes required checks.
-- `doctor` may warn if `claude` or `cursor-agent` are not installed or not logged in.
-- `test:smoke` prints `smoke ok`.
-- `test:runtime` prints `runtime ok`.
-- `npm audit --audit-level=critical` reports no critical vulnerabilities.
-- `npm run start:desktop` opens the production-style Electron app from `dist/`.
+- Electron opens the production-style app from `dist/`.
+- Local CLI agents remain desktop-only.
 
-## Manual Smoke Flow
+## Manual Web Smoke Flow
 
-1. Launch the app with `npm run start:desktop`.
-2. Open `Quick Start`.
-3. Click `Use Echo Test Agent`.
-4. Send: `hello GalCode`.
-5. Confirm the dialogue area shows an Echo response.
-6. Confirm a run pill appears with `completed`.
-7. Open `Log` and confirm raw stdout is visible.
-8. Export the session and confirm the Markdown contains transcript, runs, and raw log.
-9. Open `Settings`, click `Add Agent` from the rail, then confirm a custom agent can be edited.
-10. Delete that custom agent and confirm default agents remain.
+1. Launch Web with `npm run dev`.
+2. Open `Menu -> Settings`.
+3. Click `Add Companion`.
+4. Fill API URL, API key, model, and persona.
+5. Send a short message.
+6. Confirm the response appears as VN pages.
+7. Click `Full`, `Back`, `Next`, `History`, and `Raw`.
+8. Enable `Harem Mode`.
+9. Add or configure at least two API Companions.
+10. Send one message and confirm characters answer sequentially.
 
 ## Known v0.1 Limits
 
-- Claude Code and Cursor require their CLIs to be installed or configured manually.
-- Real terminal TUI support is intentionally out of scope for v0.1; one-shot command mode is the default.
-- Live2D, voice, BGM, multi-agent debate, and structured diff parsing are post-v0.1 work.
-- Distributed builds should use original or user-provided local assets.
+- Hosted static-only deployments need an API proxy equivalent to the local Vite `/api/galcode/chat` route.
+- API keys are stored in local state for the MVP.
+- Web mode cannot scan arbitrary local folders; use Desktop Local Bridge for folder import.
+- CLI agents require Desktop Local Bridge and installed local CLIs.
+- Live2D, voice, BGM, cloud accounts, and server-side API proxy are future work.

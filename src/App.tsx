@@ -1,9 +1,15 @@
 import {
   Bot,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Eraser,
+  FastForward,
+  FileText,
   FolderOpen,
   HelpCircle,
+  List,
   Play,
   Plus,
   Save,
@@ -15,47 +21,104 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentConfig, AgentEvent, GalCodeState, RunRecord, TranscriptEntry } from "./types";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentConfig, AgentEvent, ChatContextEntry, GalCodeState, RunRecord, TranscriptEntry } from "./types";
 import {
+  agentKind,
   browserFallbackState,
+  chatAgentPatch,
+  createCompanionAgent,
   createCustomAgent,
   defaultAgents,
   echoAgentPatch,
   filePathToAssetUrl,
   formatRawEvent,
   isDefaultAgent,
+  isChatAgent,
   makeSessionMarkdown,
-  mergeTranscriptEntry
+  mergeTranscriptEntry,
+  splitDialoguePages
 } from "./core";
 
 const now = () => new Date().toISOString();
 const uid = () => Math.random().toString(36).slice(2, 10);
+const WEB_STORAGE_KEY = "galcode-web-state";
+const LEGACY_PREVIEW_STORAGE_KEY = "galcode-preview-state";
 
 function App() {
   const [state, setState] = useState<GalCodeState>(browserFallbackState);
   const [prompt, setPrompt] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [runningSessions, setRunningSessions] = useState<Record<string, boolean>>({});
   const [rawLog, setRawLog] = useState<Record<string, string>>({});
   const [agentChecks, setAgentChecks] = useState<Record<string, { ok: boolean; message: string }>>({});
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [viewEntryIndex, setViewEntryIndex] = useState(0);
+  const [playbackPageIndex, setPlaybackPageIndex] = useState(0);
+  const [completedPlaybackIds, setCompletedPlaybackIds] = useState<Record<string, true>>({});
+  const [showFullOutput, setShowFullOutput] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(false);
+  const backgroundInputRef = useRef<HTMLInputElement | null>(null);
+  const portraitInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedAgent = useMemo(
     () => state.agents.find((agent) => agent.id === state.selectedAgentId) || state.agents[0],
     [state.agents, state.selectedAgentId]
   );
+  const companionAgents = useMemo(() => state.agents.filter((agent) => isChatAgent(agent)), [state.agents]);
   const sessionId = useMemo(
-    () => `${selectedAgent?.id || "agent"}:${state.workspace || "browser"}`,
-    [selectedAgent?.id, state.workspace]
+    () => `${state.haremMode ? "harem" : selectedAgent?.id || "agent"}:${state.workspace || "browser"}`,
+    [selectedAgent?.id, state.haremMode, state.workspace]
   );
   const transcript = state.transcripts[sessionId] || [];
   const visibleTranscript = useMemo(
     () => transcript.filter((entry) => entry.speaker !== "system"),
     [transcript]
+  );
+  const latestVisibleIndex = visibleTranscript.length - 1;
+  const safeViewEntryIndex =
+    latestVisibleIndex < 0 ? -1 : Math.min(Math.max(viewEntryIndex, 0), latestVisibleIndex);
+  const activeEntry = safeViewEntryIndex >= 0 ? visibleTranscript[safeViewEntryIndex] : undefined;
+  const latestEntry = visibleTranscript[latestVisibleIndex];
+  const activeAgent = activeEntry?.speaker === "agent"
+    ? state.agents.find((agent) => agent.id === activeEntry.agentId) || selectedAgent
+    : selectedAgent;
+  const stageAgent = activeAgent || selectedAgent;
+  const isViewingLatest = safeViewEntryIndex === latestVisibleIndex;
+  const activePages = useMemo(
+    () => splitDialoguePages(activeEntry?.text || ""),
+    [activeEntry?.id, activeEntry?.text]
+  );
+  const safePlaybackPageIndex = Math.min(playbackPageIndex, Math.max(activePages.length - 1, 0));
+  const activeSpeakerLabel =
+    activeEntry?.speaker === "user"
+      ? "You"
+      : activeEntry?.speaker === "agent"
+        ? activeAgent?.characterName || "Agent"
+        : "System";
+  const agentIsRunning = Boolean(runningSessions[sessionId]);
+  const latestPlaybackPending =
+    Boolean(latestEntry && latestEntry.speaker === "agent" && !completedPlaybackIds[latestEntry.id]) &&
+    !agentIsRunning;
+  const playbackPending =
+    Boolean(activeEntry && activeEntry.speaker === "agent" && isViewingLatest && !completedPlaybackIds[activeEntry.id]) &&
+    !agentIsRunning;
+  const currentDialogueText = activeEntry
+    ? showFullOutput
+      ? activeEntry.text.trimEnd()
+      : activePages[safePlaybackPageIndex] || ""
+    : "Ready.";
+  const promptIsAvailable = !agentIsRunning && !latestPlaybackPending && (latestVisibleIndex < 0 || isViewingLatest);
+  const canGoBack = Boolean(activeEntry && (safePlaybackPageIndex > 0 || safeViewEntryIndex > 0));
+  const canGoForward = Boolean(
+    activeEntry &&
+      (showFullOutput ||
+        safePlaybackPageIndex < activePages.length - 1 ||
+        safeViewEntryIndex < latestVisibleIndex ||
+        playbackPending)
   );
 
   useEffect(() => {
@@ -64,15 +127,99 @@ function App() {
         setState(await window.galcode.loadState());
         return;
       }
-      const saved = localStorage.getItem("galcode-preview-state");
-      if (saved) setState(JSON.parse(saved));
+      const saved = localStorage.getItem(WEB_STORAGE_KEY) || localStorage.getItem(LEGACY_PREVIEW_STORAGE_KEY);
+      if (saved) {
+        setState(JSON.parse(saved));
+        if (!localStorage.getItem(WEB_STORAGE_KEY)) localStorage.setItem(WEB_STORAGE_KEY, saved);
+      }
     };
     load();
   }, []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [transcript.length, transcript.at(-1)?.text]);
+    setViewEntryIndex(Math.max(latestVisibleIndex, 0));
+    setPlaybackPageIndex(0);
+    setShowFullOutput(false);
+  }, [latestVisibleIndex, sessionId]);
+
+  useEffect(() => {
+    setPlaybackPageIndex((current) => Math.min(current, Math.max(activePages.length - 1, 0)));
+  }, [activePages.length]);
+
+  const completeActivePlayback = useCallback(() => {
+    if (!activeEntry) return;
+    setCompletedPlaybackIds((current) => ({ ...current, [activeEntry.id]: true }));
+  }, [activeEntry]);
+
+  const goBackDialogue = useCallback(() => {
+    if (!activeEntry || !canGoBack) return;
+    setShowFullOutput(false);
+    if (safePlaybackPageIndex > 0) {
+      setPlaybackPageIndex((current) => Math.max(current - 1, 0));
+      return;
+    }
+
+    const previousIndex = safeViewEntryIndex - 1;
+    const previousEntry = visibleTranscript[previousIndex];
+    setViewEntryIndex(previousIndex);
+    setPlaybackPageIndex(Math.max(splitDialoguePages(previousEntry?.text || "").length - 1, 0));
+  }, [activeEntry, canGoBack, safePlaybackPageIndex, safeViewEntryIndex, visibleTranscript]);
+
+  const advanceDialogue = useCallback(() => {
+    if (!activeEntry || !canGoForward) return;
+    if (showFullOutput) {
+      if (playbackPending && isViewingLatest) completeActivePlayback();
+      else if (safeViewEntryIndex < latestVisibleIndex) setViewEntryIndex((current) => current + 1);
+      setShowFullOutput(false);
+      setPlaybackPageIndex(0);
+      return;
+    }
+
+    if (safePlaybackPageIndex < activePages.length - 1) {
+      setPlaybackPageIndex((current) => Math.min(current + 1, activePages.length - 1));
+      return;
+    }
+
+    if (safeViewEntryIndex < latestVisibleIndex) {
+      setViewEntryIndex((current) => current + 1);
+      setPlaybackPageIndex(0);
+      return;
+    }
+
+    if (playbackPending && isViewingLatest) completeActivePlayback();
+  }, [
+    activeEntry,
+    activePages.length,
+    canGoForward,
+    completeActivePlayback,
+    isViewingLatest,
+    latestVisibleIndex,
+    playbackPending,
+    safePlaybackPageIndex,
+    safeViewEntryIndex,
+    showFullOutput
+  ]);
+
+  const revealFullOutput = useCallback(() => {
+    if (!activeEntry) return;
+    setShowFullOutput((current) => !current);
+  }, [activeEntry]);
+
+  const skipDialogue = useCallback(() => {
+    if (!playbackPending || !isViewingLatest) return;
+    setShowFullOutput(false);
+    setPlaybackPageIndex(Math.max(activePages.length - 1, 0));
+    completeActivePlayback();
+  }, [activePages.length, completeActivePlayback, isViewingLatest, playbackPending]);
+
+  useEffect(() => {
+    if (!autoPlay || !playbackPending || showFullOutput) return;
+    const delay = Math.min(2600, Math.max(950, currentDialogueText.length * 34));
+    const timer = window.setTimeout(() => {
+      advanceDialogue();
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [advanceDialogue, autoPlay, currentDialogueText.length, playbackPending, showFullOutput]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -80,11 +227,40 @@ function App() {
       setMenuOpen(false);
       setSettingsOpen(false);
       setHelpOpen(false);
+      setHistoryOpen(false);
       setRawOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, []);
+
+  useEffect(() => {
+    const advanceOnKey = (event: KeyboardEvent) => {
+      if (event.key !== " " && event.key !== "Enter") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, button")) return;
+      if (!canGoForward) return;
+      event.preventDefault();
+      advanceDialogue();
+    };
+    window.addEventListener("keydown", advanceOnKey);
+    return () => window.removeEventListener("keydown", advanceOnKey);
+  }, [advanceDialogue, canGoForward]);
+
+  const handleStageClick = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "button, input, textarea, select, a, .settings-panel, .help-panel, .raw-panel, .history-panel, .vn-menu-panel, .vn-menu-toggle"
+        )
+      ) {
+        return;
+      }
+      advanceDialogue();
+    },
+    [advanceDialogue]
+  );
 
   useEffect(() => {
     if (!window.galcode) return;
@@ -145,7 +321,7 @@ function App() {
     if (window.galcode) {
       await window.galcode.saveState(nextState);
     } else {
-      localStorage.setItem("galcode-preview-state", JSON.stringify(nextState));
+      localStorage.setItem(WEB_STORAGE_KEY, JSON.stringify(nextState));
     }
   };
 
@@ -153,7 +329,7 @@ function App() {
     setState((current) => {
       const next = updater(current);
       if (window.galcode) window.galcode.saveState(next);
-      else localStorage.setItem("galcode-preview-state", JSON.stringify(next));
+      else localStorage.setItem(WEB_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
   };
@@ -171,7 +347,7 @@ function App() {
         }
       };
       if (window.galcode) window.galcode.saveState(next);
-      else localStorage.setItem("galcode-preview-state", JSON.stringify(next));
+      else localStorage.setItem(WEB_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
   };
@@ -210,25 +386,73 @@ function App() {
   };
 
   const chooseWorkspace = async () => {
-    if (!window.galcode) return;
+    if (!window.galcode) {
+      appendEntry(sessionId, {
+        id: uid(),
+        agentId: selectedAgent?.id || "system",
+        speaker: "agent",
+        text: "Web 版无法直接选择本机 workspace。需要运行 Desktop Local Bridge 后才能连接本地项目。",
+        at: now()
+      });
+      return;
+    }
     const workspace = await window.galcode.chooseWorkspace();
     if (workspace) await saveState({ ...state, workspace });
   };
 
   const chooseBackgroundAsset = async () => {
-    if (!window.galcode) return;
+    if (!window.galcode) {
+      backgroundInputRef.current?.click();
+      return;
+    }
     const backgroundPath = await window.galcode.chooseImageAsset();
     if (backgroundPath) await saveState({ ...state, backgroundPath });
   };
 
   const choosePortraitAsset = async () => {
-    if (!window.galcode || !selectedAgent) return;
+    if (!selectedAgent) return;
+    if (!window.galcode) {
+      portraitInputRef.current?.click();
+      return;
+    }
     const portraitPath = await window.galcode.chooseImageAsset();
     if (portraitPath) updateAgent(selectedAgent.id, { portraitPath });
   };
 
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(String(reader.result || "")));
+      reader.addEventListener("error", () => reject(reader.error || new Error("Failed to read image.")));
+      reader.readAsDataURL(file);
+    });
+
+  const handleBackgroundFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const backgroundPath = await fileToDataUrl(file);
+    await saveState({ ...state, backgroundPath });
+  };
+
+  const handlePortraitFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !selectedAgent) return;
+    updateAgent(selectedAgent.id, { portraitPath: await fileToDataUrl(file) });
+  };
+
   const importThemeFolder = async () => {
-    if (!window.galcode) return;
+    if (!window.galcode) {
+      appendEntry(sessionId, {
+        id: uid(),
+        agentId: selectedAgent?.id || "system",
+        speaker: "agent",
+        text: "Web 版不能直接扫描本机主题文件夹。后续可以做上传主题包；现在本机目录导入属于 Desktop Local Bridge 能力。",
+        at: now()
+      });
+      return;
+    }
     const themeFolder = await window.galcode.importThemeFolder(state.agents);
     if (!themeFolder) return;
     await saveState({
@@ -253,7 +477,7 @@ function App() {
     if (!window.galcode) {
       setAgentChecks((current) => ({
         ...current,
-        [agent.id]: { ok: false, message: "Open the Electron app to check local commands." }
+        [agent.id]: { ok: false, message: "Local Bridge required for CLI checks." }
       }));
       return;
     }
@@ -283,7 +507,7 @@ function App() {
       return;
     }
     if (!window.galcode) {
-      appendEntry(sessionId, previewEntry(selectedAgent));
+      appendEntry(sessionId, localBridgeUnavailableEntry(selectedAgent));
       return;
     }
     setRunningSessions((current) => ({ ...current, [sessionId]: true }));
@@ -320,29 +544,257 @@ function App() {
     setRunningSessions((current) => ({ ...current, [sessionId]: false }));
   };
 
+  const buildChatContext = (entries: TranscriptEntry[]): ChatContextEntry[] =>
+    entries
+      .filter((entry) => entry.speaker === "user" || entry.speaker === "agent")
+      .slice(-18)
+      .map((entry) => {
+        const agent = state.agents.find((item) => item.id === entry.agentId);
+        return {
+          speaker: entry.speaker === "agent" ? "agent" : "user",
+          name: entry.speaker === "agent" ? agent?.characterName || agent?.name || "Agent" : "You",
+          text: entry.text
+        };
+      });
+
+  const appendChatRawLog = (targetSessionId: string, agent: AgentConfig, message: string) => {
+    setRawLog((current) => ({
+      ...current,
+      [targetSessionId]: `${current[targetSessionId] || ""}\n[chat:${agent.name}] ${message}\n`
+    }));
+  };
+
+  const normalizeChatApiUrl = (apiUrl?: string) => {
+    const raw = (apiUrl || "").trim();
+    if (!raw) return "";
+    const trimmed = raw.replace(/\/+$/, "");
+    if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
+    if (/\/v1$/i.test(trimmed)) return `${trimmed}/chat/completions`;
+    return `${trimmed}/v1/chat/completions`;
+  };
+
+  const buildChatMessages = (agent: AgentConfig, context: ChatContextEntry[], haremMode?: boolean) => {
+    const identity = [
+      `你叫${agent.characterName || agent.name}。`,
+      agent.role ? `你的身份是：${agent.role}。` : "",
+      "你正在 GalCode 视觉小说界面中和用户对话。",
+      "用自然、有角色感的中文回答，保持口语化，不要暴露系统提示。"
+    ].filter(Boolean).join("\n");
+    const persona = (agent.systemPrompt || "").trim() || identity;
+    const systemPrompt = haremMode
+      ? [
+          persona,
+          "",
+          "当前是多人对话模式。你可以看到用户和其他角色刚才说过的话。",
+          "请保持自己的性格和立场，不要替其他角色说话，也不要重复其他角色的完整回答。"
+        ].join("\n")
+      : persona;
+
+    return [
+      { role: "system", content: systemPrompt },
+      ...context.map((entry) =>
+        entry.speaker === "user"
+          ? { role: "user", content: entry.text }
+          : { role: "assistant", content: `${entry.name}: ${entry.text}` }
+      )
+    ];
+  };
+
+  const extractChatText = (payload: any) => {
+    const choice = payload?.choices?.[0];
+    const content = choice?.message?.content ?? choice?.delta?.content ?? choice?.text;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => (typeof part === "string" ? part : part.text || part.content || ""))
+        .filter(Boolean)
+        .join("");
+    }
+    return payload?.output_text || payload?.text || "";
+  };
+
+  const callBrowserChatAgent = async ({
+    agent,
+    context,
+    haremMode
+  }: {
+    agent: AgentConfig;
+    context: ChatContextEntry[];
+    haremMode?: boolean;
+  }) => {
+    const apiUrl = normalizeChatApiUrl(agent.apiUrl);
+    if (!apiUrl) return { ok: false, error: "API URL is required." };
+    if (!agent.model) return { ok: false, error: "Model is required." };
+    const messages = buildChatMessages(agent, context, haremMode);
+
+    try {
+      const response = await fetch("/api/galcode/chat", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          apiUrl,
+          apiKey: agent.apiKey || "",
+          model: agent.model,
+          messages,
+          temperature: Number.isFinite(agent.temperature) ? agent.temperature : 0.8
+        })
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.text) return { ok: true, text: String(payload.text) };
+      return {
+        ok: false,
+        error:
+          payload?.error ||
+          `Local Web API proxy failed with HTTP ${response.status}. Restart npm run dev or use Desktop Local Bridge.`
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? `${error.message}（本地 Web API 代理不可用，请重启 npm run dev）`
+            : "Chat API request failed."
+      };
+    }
+  };
+
+  const runChatAgent = async ({
+    agent,
+    text,
+    context,
+    targetSessionId,
+    haremMode
+  }: {
+    agent: AgentConfig;
+    text: string;
+    context: ChatContextEntry[];
+    targetSessionId: string;
+    haremMode?: boolean;
+  }) => {
+    const runId = uid();
+    appendRun(targetSessionId, {
+      id: runId,
+      agentId: agent.id,
+      prompt: text,
+      startedAt: now(),
+      status: "running",
+      outputChars: 0
+    });
+
+    appendChatRawLog(targetSessionId, agent, `request model=${agent.model || "(missing model)"}`);
+    const result = window.galcode
+      ? await window.galcode.chatAgent({
+          sessionId: targetSessionId,
+          runId,
+          agent,
+          prompt: text,
+          context,
+          haremMode
+        })
+      : await callBrowserChatAgent({ agent, context, haremMode });
+
+    if (!result.ok || !result.text) {
+      const errorText = `API 调用失败：${result.error || "empty response"}`;
+      const entry: TranscriptEntry = {
+        id: uid(),
+        agentId: agent.id,
+        speaker: "agent",
+        text: errorText,
+        at: now(),
+        runId
+      };
+      appendEntry(targetSessionId, entry);
+      appendChatRawLog(targetSessionId, agent, result.error || "failed");
+      updateRun(targetSessionId, runId, { status: "failed", endedAt: now(), outputCharsDelta: errorText.length });
+      return entry;
+    }
+
+    const entry: TranscriptEntry = {
+      id: uid(),
+      agentId: agent.id,
+      speaker: "agent",
+      text: result.text,
+      at: now(),
+      runId
+    };
+    appendEntry(targetSessionId, entry);
+    appendChatRawLog(targetSessionId, agent, `response ${result.text.length} chars`);
+    updateRun(targetSessionId, runId, {
+      status: "completed",
+      endedAt: now(),
+      outputCharsDelta: result.text.length
+    });
+    return entry;
+  };
+
+  const sendChatPrompt = async (text: string, userEntry: TranscriptEntry, baseTranscript: TranscriptEntry[]) => {
+    const targetAgents = state.haremMode ? companionAgents : selectedAgent && isChatAgent(selectedAgent) ? [selectedAgent] : [];
+    if (targetAgents.length === 0) {
+      appendEntry(sessionId, {
+        id: uid(),
+        agentId: selectedAgent?.id || "system",
+        speaker: "agent",
+        text: state.haremMode
+          ? "Harem mode needs at least one API companion. Add one in Settings."
+          : "This agent is not an API companion.",
+        at: now()
+      });
+      return;
+    }
+
+    setRunningSessions((current) => ({ ...current, [sessionId]: true }));
+    const turnEntries: TranscriptEntry[] = [];
+    for (const agent of targetAgents) {
+      const context = buildChatContext([...baseTranscript, userEntry, ...turnEntries]);
+      const entry = await runChatAgent({
+        agent,
+        text,
+        context,
+        targetSessionId: sessionId,
+        haremMode: Boolean(state.haremMode)
+      });
+      turnEntries.push(entry);
+    }
+    setRunningSessions((current) => ({ ...current, [sessionId]: false }));
+  };
+
   const sendPrompt = async (event: FormEvent) => {
     event.preventDefault();
     const text = prompt.trim();
-    if (!text || !selectedAgent) return;
+    if (!text || !selectedAgent || !promptIsAvailable) return;
     setPrompt("");
     const runId = uid();
-
-    appendEntry(sessionId, {
+    const baseTranscript = state.transcripts[sessionId] || [];
+    const userEntry: TranscriptEntry = {
       id: uid(),
-      agentId: selectedAgent.id,
+      agentId: state.haremMode ? "harem" : selectedAgent.id,
       speaker: "user",
       text,
       at: now(),
       runId
-    });
+    };
+
+    appendEntry(sessionId, userEntry);
 
     if (text === "/login") {
+      if (state.haremMode || isChatAgent(selectedAgent)) {
+        appendEntry(sessionId, {
+          id: uid(),
+          agentId: selectedAgent.id,
+          speaker: "agent",
+          text: "API companion 不需要 CLI 登录。请在 Settings 里配置 API URL、API Key 和模型名。",
+          at: now()
+        });
+        return;
+      }
       if (!window.galcode) {
         appendEntry(sessionId, {
           id: uid(),
           agentId: selectedAgent.id,
           speaker: "agent",
-          text: "Open the Electron app to launch CLI login.",
+          text: "CLI 登录需要 Desktop Local Bridge。Web 版可以直接使用 API Companion。",
           at: now()
         });
         return;
@@ -362,6 +814,11 @@ function App() {
       return;
     }
 
+    if (state.haremMode || isChatAgent(selectedAgent)) {
+      await sendChatPrompt(text, userEntry, baseTranscript);
+      return;
+    }
+
     appendRun(sessionId, {
       id: runId,
       agentId: selectedAgent.id,
@@ -378,7 +835,7 @@ function App() {
           id: uid(),
           agentId: selectedAgent.id,
           speaker: "agent",
-          text: "Preview mode is showing the GalCode interface. Run the Electron app to connect this character to a local CLI agent.",
+          text: "这个角色是本地 CLI 工作 agent，需要 Desktop Local Bridge 才能运行。Web 主线请使用 API Companion。",
           at: now(),
           runId
         });
@@ -403,6 +860,11 @@ function App() {
         text: result.error || "Failed to send prompt.",
         at: now()
       });
+      setRunningSessions((current) => ({ ...current, [sessionId]: false }));
+      updateRun(sessionId, runId, {
+        status: "failed",
+        endedAt: now()
+      });
     }
   };
 
@@ -426,6 +888,10 @@ function App() {
       }
     });
     setRawLog((current) => ({ ...current, [sessionId]: "" }));
+    setViewEntryIndex(0);
+    setPlaybackPageIndex(0);
+    setShowFullOutput(false);
+    setCompletedPlaybackIds({});
   };
 
   const exportSession = async () => {
@@ -478,6 +944,35 @@ function App() {
     setSettingsOpen(true);
   };
 
+  const addCompanionAgent = () => {
+    const nextAgent = createCompanionAgent(state.agents);
+    void saveState({
+      ...state,
+      agents: [...state.agents, nextAgent],
+      selectedAgentId: nextAgent.id
+    });
+    setSettingsOpen(true);
+  };
+
+  const updateSelectedAgentKind = (kind: "cli" | "chat") => {
+    if (!selectedAgent) return;
+    updateAgent(
+      selectedAgent.id,
+      kind === "chat"
+        ? {
+            ...chatAgentPatch(),
+            role: selectedAgent.role || "Warm roleplay companion"
+          }
+        : {
+            kind: "cli",
+            command: selectedAgent.command || "node",
+            args: selectedAgent.args || 'scripts/echo-agent.mjs "{prompt}"',
+            mode: selectedAgent.mode || "oneshot",
+            modelNote: selectedAgent.modelNote || "Custom local agent"
+          }
+    );
+  };
+
   const deleteSelectedAgent = () => {
     if (!selectedAgent || isDefaultAgent(selectedAgent.id)) {
       if (selectedAgent) {
@@ -525,8 +1020,8 @@ function App() {
   };
 
   return (
-    <main className="app-shell" style={{ "--agent-accent": selectedAgent?.accent } as React.CSSProperties}>
-      <section className="stage">
+    <main className="app-shell" style={{ "--agent-accent": stageAgent?.accent } as React.CSSProperties}>
+      <section className="stage" onClick={handleStageClick}>
         <div className={`scene-backdrop ${state.backgroundPath ? "has-scene-image" : ""}`} aria-hidden="true">
           {state.backgroundPath ? (
             <img className="scene-image" src={filePathToAssetUrl(state.backgroundPath)} alt="" />
@@ -555,7 +1050,7 @@ function App() {
                 </span>
                 <div>
                   <strong>GalCode</strong>
-                  <small>{state.workspace || "Browser preview"}</small>
+                  <small>{window.galcode ? state.workspace || "Local Bridge" : "GalCode Web"}</small>
                 </div>
               </div>
 
@@ -577,6 +1072,16 @@ function App() {
                   </button>
                 ))}
               </nav>
+
+              <button
+                className={`harem-toggle ${state.haremMode ? "active" : ""}`}
+                type="button"
+                onClick={() => void saveState({ ...state, haremMode: !state.haremMode })}
+              >
+                <span>Harem Mode</span>
+                <strong>{state.haremMode ? "ON" : "OFF"}</strong>
+                <small>{companionAgents.length} companions</small>
+              </button>
 
               <div className="vn-actions">
                 <button className="icon-button" onClick={chooseWorkspace} title="Choose workspace">
@@ -631,11 +1136,11 @@ function App() {
 
         <section className="character-panel">
           <div className="character-aura" />
-          {selectedAgent?.portraitPath ? (
+          {stageAgent?.portraitPath ? (
             <img
               className="character-image"
-              src={filePathToAssetUrl(selectedAgent.portraitPath)}
-              alt={selectedAgent.characterName}
+              src={filePathToAssetUrl(stageAgent.portraitPath)}
+              alt={stageAgent.characterName}
             />
           ) : (
             <div className="character-sprite">
@@ -649,8 +1154,8 @@ function App() {
             </div>
           )}
           <div className="character-meta">
-            <strong>{selectedAgent?.characterName}</strong>
-            <span>{selectedAgent?.role}</span>
+            <strong>{stageAgent?.characterName}</strong>
+            <span>{stageAgent?.role}</span>
           </div>
         </section>
 
@@ -658,46 +1163,118 @@ function App() {
           <header className="scene-toolbar">
             <div>
               <span className="status-dot" data-running={runningSessions[sessionId] ? "true" : "false"} />
-              <strong>{selectedAgent?.characterName}</strong>
+              <strong>{state.haremMode ? "Harem" : stageAgent?.characterName}</strong>
               <small>
-                {selectedAgent?.name} / {selectedAgent?.modelNote}
+                {state.haremMode
+                  ? `${companionAgents.length} API companions`
+                  : `${stageAgent?.name} / ${stageAgent?.modelNote}`}
               </small>
             </div>
           </header>
 
-          <div className="transcript" ref={scrollRef}>
-            {visibleTranscript.length === 0 ? (
-              <div className="empty-line">
-                <span>{selectedAgent?.characterName}</span>
-                <p>Ready.</p>
-              </div>
-            ) : (
-              visibleTranscript.map((entry) => (
-                <article key={entry.id} className={`line ${entry.speaker} ${entry.stream || ""}`}>
-                  <div className="speaker">
-                    {entry.speaker === "user"
-                      ? "You"
-                      : entry.speaker === "system"
-                        ? "System"
-                        : selectedAgent?.characterName}
-                  </div>
-                  <pre>{entry.text}</pre>
-                </article>
-              ))
-            )}
+          <article
+            className={`vn-dialogue ${showFullOutput ? "full" : ""}`}
+            data-speaker={activeEntry?.speaker || "empty"}
+            data-running={agentIsRunning ? "true" : "false"}
+          >
+            <div className="vn-speaker-line">
+              <strong>{activeEntry ? activeSpeakerLabel : stageAgent?.characterName}</strong>
+              {activeEntry?.speaker === "agent" ? (
+                <span>
+                  {showFullOutput
+                    ? "Full Output"
+                    : `${safePlaybackPageIndex + 1}/${activePages.length}`}
+                </span>
+              ) : null}
+            </div>
+            <pre className="vn-current-text">{currentDialogueText}</pre>
+            {agentIsRunning ? (
+              <div className="vn-read-hint">正在整理回复...</div>
+            ) : playbackPending && !showFullOutput ? (
+              <button className="vn-read-hint" type="button" onClick={advanceDialogue}>
+                <span>Click</span>
+                <ChevronRight size={18} />
+              </button>
+            ) : null}
+          </article>
+
+          <div className="vn-control-bar">
+            <span>
+              {agentIsRunning
+                ? `${state.haremMode ? "大家" : stageAgent?.characterName} 正在回应`
+                : !activeEntry
+                  ? "准备开始"
+                  : !isViewingLatest
+                    ? `回顾 ${safeViewEntryIndex + 1}/${visibleTranscript.length}`
+                    : latestPlaybackPending
+                      ? "点击画面推进对白"
+                      : "可以输入下一句"}
+            </span>
+            <div className="vn-command-group">
+              <button className="vn-command-button" type="button" onClick={goBackDialogue} disabled={!canGoBack}>
+                <ChevronLeft size={17} />
+                Back
+              </button>
+              <button
+                className="vn-command-button primary"
+                type="button"
+                onClick={advanceDialogue}
+                disabled={!canGoForward}
+              >
+                <ChevronRight size={17} />
+                {playbackPending && isViewingLatest && safePlaybackPageIndex >= activePages.length - 1
+                  ? "Done"
+                  : "Next"}
+              </button>
+              <button
+                className={`vn-command-button ${autoPlay ? "active" : ""}`}
+                type="button"
+                onClick={() => setAutoPlay((value) => !value)}
+                disabled={!activeEntry}
+              >
+                <Play size={17} />
+                Auto
+              </button>
+              <button className="vn-command-button" type="button" onClick={revealFullOutput} disabled={!activeEntry}>
+                <List size={17} />
+                Full
+              </button>
+              <button className="vn-command-button" type="button" onClick={() => setHistoryOpen(true)}>
+                <BookOpen size={17} />
+                History
+              </button>
+              <button className="vn-command-button" type="button" onClick={() => setRawOpen(true)}>
+                <FileText size={17} />
+                Raw
+              </button>
+              {agentIsRunning ? (
+                <button className="vn-command-button" type="button" onClick={stopAgent}>
+                  <Square size={17} />
+                  Stop
+                </button>
+              ) : (
+                <button className="vn-command-button" type="button" onClick={skipDialogue} disabled={!playbackPending}>
+                  <FastForward size={17} />
+                  Skip
+                </button>
+              )}
+            </div>
           </div>
 
-          <form className="prompt-bar" onSubmit={sendPrompt}>
-            <input
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder={`Message ${selectedAgent?.characterName}`}
-            />
-            <button className="send-button" type="submit">
-              <Send size={18} />
-              Send
-            </button>
-          </form>
+          {promptIsAvailable ? (
+            <form className="prompt-bar" onSubmit={sendPrompt}>
+              <input
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder={state.haremMode ? "Message everyone" : `Message ${stageAgent?.characterName}`}
+                disabled={!promptIsAvailable}
+              />
+              <button className="send-button" type="submit" disabled={!promptIsAvailable}>
+                <Send size={18} />
+                Send
+              </button>
+            </form>
+          ) : null}
         </section>
       </section>
 
@@ -714,6 +1291,16 @@ function App() {
               </button>
             </div>
           </header>
+          <label>
+            Agent Type
+            <select
+              value={agentKind(selectedAgent)}
+              onChange={(event) => updateSelectedAgentKind(event.target.value as "cli" | "chat")}
+            >
+              <option value="cli">Work Agent CLI</option>
+              <option value="chat">API Companion</option>
+            </select>
+          </label>
           <label>
             Character
             <input
@@ -740,7 +1327,11 @@ function App() {
           </div>
           <button className="tool-button" onClick={addCustomAgent}>
             <Plus size={17} />
-            Add Agent
+            Add CLI Agent
+          </button>
+          <button className="tool-button" onClick={addCompanionAgent}>
+            <Plus size={17} />
+            Add Companion
           </button>
           <button className="tool-button" onClick={() => void importThemeFolder()}>
             <FolderOpen size={17} />
@@ -758,42 +1349,93 @@ function App() {
             <Terminal size={17} />
             Use Echo Test Agent
           </button>
-          <label>
-            Command
-            <input
-              value={selectedAgent.command}
-              onChange={(event) => updateAgent(selectedAgent.id, { command: event.target.value })}
-            />
-          </label>
-          <div className="check-row">
-            <button className="tool-button" onClick={() => void checkAgent(selectedAgent)}>
-              <Terminal size={17} />
-              Check Command
-            </button>
-            {agentChecks[selectedAgent.id] ? (
-              <span data-ok={agentChecks[selectedAgent.id].ok ? "true" : "false"}>
-                {agentChecks[selectedAgent.id].message}
-              </span>
-            ) : null}
-          </div>
-          <label>
-            Args
-            <input
-              value={selectedAgent.args}
-              onChange={(event) => updateAgent(selectedAgent.id, { args: event.target.value })}
-              placeholder='Use "{prompt}" in oneshot mode'
-            />
-          </label>
-          <label>
-            Mode
-            <select
-              value={selectedAgent.mode}
-              onChange={(event) => updateAgent(selectedAgent.id, { mode: event.target.value as AgentConfig["mode"] })}
-            >
-              <option value="interactive">interactive</option>
-              <option value="oneshot">oneshot</option>
-            </select>
-          </label>
+          {isChatAgent(selectedAgent) ? (
+            <>
+              <label>
+                API URL
+                <input
+                  value={selectedAgent.apiUrl || ""}
+                  onChange={(event) => updateAgent(selectedAgent.id, { apiUrl: event.target.value })}
+                  placeholder="https://api.example.com/v1"
+                />
+              </label>
+              <label>
+                API Key
+                <input
+                  type="password"
+                  value={selectedAgent.apiKey || ""}
+                  onChange={(event) => updateAgent(selectedAgent.id, { apiKey: event.target.value })}
+                  placeholder="sk-..."
+                />
+              </label>
+              <label>
+                Model
+                <input
+                  value={selectedAgent.model || ""}
+                  onChange={(event) => updateAgent(selectedAgent.id, { model: event.target.value })}
+                  placeholder="qwen3.6-27b"
+                />
+              </label>
+              <label>
+                Temperature
+                <input
+                  type="number"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={selectedAgent.temperature ?? 0.8}
+                  onChange={(event) => updateAgent(selectedAgent.id, { temperature: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Personality / System Prompt
+                <textarea
+                  value={selectedAgent.systemPrompt || ""}
+                  onChange={(event) => updateAgent(selectedAgent.id, { systemPrompt: event.target.value })}
+                  placeholder="Describe her identity, tone, relationship, boundaries, and speaking style."
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                Command
+                <input
+                  value={selectedAgent.command}
+                  onChange={(event) => updateAgent(selectedAgent.id, { command: event.target.value })}
+                />
+              </label>
+              <div className="check-row">
+                <button className="tool-button" onClick={() => void checkAgent(selectedAgent)}>
+                  <Terminal size={17} />
+                  Check Command
+                </button>
+                {agentChecks[selectedAgent.id] ? (
+                  <span data-ok={agentChecks[selectedAgent.id].ok ? "true" : "false"}>
+                    {agentChecks[selectedAgent.id].message}
+                  </span>
+                ) : null}
+              </div>
+              <label>
+                Args
+                <input
+                  value={selectedAgent.args}
+                  onChange={(event) => updateAgent(selectedAgent.id, { args: event.target.value })}
+                  placeholder='Use "{prompt}" in oneshot mode'
+                />
+              </label>
+              <label>
+                Mode
+                <select
+                  value={selectedAgent.mode}
+                  onChange={(event) => updateAgent(selectedAgent.id, { mode: event.target.value as AgentConfig["mode"] })}
+                >
+                  <option value="interactive">interactive</option>
+                  <option value="oneshot">oneshot</option>
+                </select>
+              </label>
+            </>
+          )}
           <label>
             Accent
             <input
@@ -860,6 +1502,41 @@ function App() {
         </aside>
       ) : null}
 
+      {historyOpen ? (
+        <aside className="history-panel">
+          <header>
+            <h2>Dialogue Log</h2>
+            <button className="icon-button" onClick={() => setHistoryOpen(false)} title="Close dialogue log">
+              <X size={18} />
+            </button>
+          </header>
+          <div className="history-list">
+            {visibleTranscript.length === 0 ? (
+              <p>No dialogue yet.</p>
+            ) : (
+              visibleTranscript.map((entry, index) => (
+                <button
+                  key={entry.id}
+                  className={`history-item ${index === safeViewEntryIndex ? "active" : ""}`}
+                  type="button"
+                  onClick={() => {
+                    setViewEntryIndex(index);
+                    setPlaybackPageIndex(0);
+                    setShowFullOutput(false);
+                    setHistoryOpen(false);
+                  }}
+                >
+                  <strong>
+                    {entry.speaker === "user" ? "You" : entry.speaker === "agent" ? selectedAgent?.characterName : "System"}
+                  </strong>
+                  <span>{entry.text.replace(/\s+/g, " ").trim()}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </aside>
+      ) : null}
+
       {rawOpen ? (
         <aside className="raw-panel">
           <header>
@@ -871,16 +1548,31 @@ function App() {
           <pre>{rawLog[sessionId] || "No output."}</pre>
         </aside>
       ) : null}
+
+      <input
+        ref={backgroundInputRef}
+        className="asset-file-input"
+        type="file"
+        accept="image/*"
+        onChange={handleBackgroundFile}
+      />
+      <input
+        ref={portraitInputRef}
+        className="asset-file-input"
+        type="file"
+        accept="image/*"
+        onChange={handlePortraitFile}
+      />
     </main>
   );
 }
 
-function previewEntry(agent: AgentConfig): TranscriptEntry {
+function localBridgeUnavailableEntry(agent: AgentConfig): TranscriptEntry {
   return {
     id: uid(),
     agentId: agent.id,
     speaker: "system",
-    text: "Desktop bridge is not available in browser preview.",
+    text: "Desktop Local Bridge is not connected.",
     at: now()
   };
 }
