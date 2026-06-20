@@ -1,6 +1,6 @@
 # Reference Strategy
 
-GalCode should absorb proven visual-novel and desktop-agent patterns without becoming a clone of any single project.
+GalCode should absorb proven visual-novel and AI companion patterns without becoming a clone of any single project.
 
 ## Ren'Py
 
@@ -8,11 +8,9 @@ Source: https://www.renpy.org/
 
 Useful takeaways:
 
-- Treat dialogue, narration, character display, transitions, menus, audio, and save/history as first-class systems.
-- Keep authoring simple. Ren'Py succeeds because large narrative experiences can be expressed with a compact script language and extended with Python when needed.
-- GalCode equivalent: introduce a small scene/event grammar later, for example `say`, `narrate`, `show`, `hide`, `choice`, `sound`, `agent_event`.
-
-Do not copy Ren'Py internals into the Electron MVP. Use it as product grammar inspiration.
+- Treat dialogue, narration, character display, transitions, menus, audio, save/history, and choices as first-class systems.
+- Keep authoring simple. Ren'Py succeeds because large narrative experiences can be expressed with a compact script language.
+- GalCode equivalent: introduce a small scene/event grammar later, for example `say`, `narrate`, `show`, `hide`, `choice`, `sound`, `director_update`.
 
 ## super-agent-party
 
@@ -21,14 +19,14 @@ Source: https://github.com/heshengtao/super-agent-party
 Useful takeaways:
 
 - Desktop companion framing with custom models, character personas, backgrounds, emotion packs, and multi-window modes.
-- Extension system for adding new surfaces.
-- Agent task center and computer-control direction.
+- Extension system for character packs and model providers.
+- Multi-character party conversations.
 
 GalCode equivalent:
 
-- Theme packs and local asset imports.
-- Future extension points for agent adapters and character packs.
-- Optional side/dock window for a lightweight heroine companion.
+- Theme packs and browser image imports.
+- Configurable API heroines.
+- Harem Mode where characters answer in order and can react to earlier replies.
 
 ## Galcode Island
 
@@ -36,18 +34,17 @@ Source: https://github.com/sjyinzju/Galcode_island
 
 Useful takeaways:
 
-- Project tabs are the right primary work unit.
-- Normalize agent output into structured blocks: user input, body, thinking, command, command output, todo, file, diff, tool call, status, stderr, error.
-- Codex is better treated as a shared app-server JSON-RPC backend when going beyond one-shot execution.
-- Claude can use stream-json style process integration.
-- Session persistence needs native session/thread IDs, not only visible transcript text.
+- Keep the galgame layer emotionally focused instead of exposing raw model mechanics.
+- Preserve session history and make replay/review natural.
+- Character identity should be a durable object: portrait, name, accent, model config, system prompt, and relationship state.
 
-GalCode next implementation target:
+GalCode next implementation targets:
 
-- Replace plain transcript entries with stream blocks.
-- Add project tabs and history restore.
-- Build specialized backend adapters for Codex app-server, Claude stream JSON, Cursor headless, and future OpenCode.
-- Keep the galgame layer on top of the block model instead of tying it to raw stdout.
+- Add save slots and story snapshots.
+- Add choices that the director can interpret as plot branches.
+- Add emotion/pose selection for each heroine.
+- Add BGM, voice, and transition events.
+- Move API keys to a safer server-side vault before hosted deployment.
 
 ## Local Asset Policy
 

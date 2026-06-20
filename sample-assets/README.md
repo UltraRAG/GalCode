@@ -10,9 +10,9 @@ sample-assets/
     hallway-day-ccby-lisadicaprio.png
     hallway-night-ccby-lisadicaprio.png
   characters/
-    codex-codel-sprite-ccby-lisadicaprio.png
-    claude-codel-sprite-ccby-lisadicaprio.png
-    cursor-codel-sprite-ccby-lisadicaprio.png
+    koharu-sprite-ccby-lisadicaprio.png
+    shiori-sprite-ccby-lisadicaprio.png
+    akari-sprite-ccby-lisadicaprio.png
 ```
 
 To test another theme, place image files in a folder with similar names and use `Settings -> Import Theme Folder`.

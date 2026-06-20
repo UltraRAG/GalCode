@@ -7,25 +7,25 @@ assert.deepEqual(parseArgs('exec "{prompt}" --flag value'), ["exec", "{prompt}",
 assert.deepEqual(parseArgs("-p '{prompt}'"), ["-p", "{prompt}"]);
 
 assert.deepEqual(
-  buildCommand({ command: "codex", args: 'exec --json --color never --skip-git-repo-check "{prompt}"', mode: "oneshot" }, "hello world"),
-  { command: "codex", args: ["exec", "--json", "--color", "never", "--skip-git-repo-check", "hello world"] }
+  buildCommand({ command: "local-chat", args: 'send "{prompt}" --json', mode: "oneshot" }, "hello world"),
+  { command: "local-chat", args: ["send", "hello world", "--json"] }
 );
 assert.deepEqual(
   buildCommand({ command: "node", args: "scripts/echo-agent.mjs", mode: "oneshot" }, "hello world"),
   { command: "node", args: ["scripts/echo-agent.mjs", "hello world"] }
 );
 assert.deepEqual(
-  buildCommand({ command: "cursor-agent", args: "--print", mode: "interactive" }, "ignored"),
-  { command: "cursor-agent", args: ["--print"] }
+  buildCommand({ command: "local-agent", args: "--print", mode: "interactive" }, "ignored"),
+  { command: "local-agent", args: ["--print"] }
 );
 
 const candidates = [
   "/theme/backgrounds/room-evening.png",
-  "/theme/characters/codex-koharu.png",
-  "/theme/characters/claude-shiori.png"
+  "/theme/characters/koharu-smile.png",
+  "/theme/characters/shiori-reading.png"
 ];
-assert.equal(scoreImageForQuery(candidates[1], ["codex", "portrait"]) > 0, true);
-assert.equal(pickBestImage(candidates, ["claude", "shiori"]), candidates[2]);
+assert.equal(scoreImageForQuery(candidates[1], ["koharu", "portrait"]) > 0, true);
+assert.equal(pickBestImage(candidates, ["shiori", "reading"]), candidates[2]);
 
 const echo = spawnSync("node", [path.join("scripts", "echo-agent.mjs"), "hello", "agent"], {
   cwd: path.join(__dirname, ".."),

@@ -1,156 +1,94 @@
 # GalCode
 
-GalCode is a web-first galgame interface for AI companions, roleplay characters, and optional local coding agents.
+GalCode is a web-first galgame interface for configurable OpenAI-compatible API characters. It turns chat models into visual-novel heroines, adds a global director agent for story continuity, and presents replies through click-to-advance dialogue.
 
-The main product is now the browser app: configure OpenAI-compatible chat APIs, give each heroine her own identity and system prompt, then talk through a visual-novel style dialogue flow. The desktop/Electron build remains as a Local Bridge for features that a browser cannot do directly, such as calling Codex, Claude Code, Cursor Agent, choosing local folders, and loading arbitrary local image packs.
+## Current Product Shape
 
-## Current Capabilities
+- Pure Web app: run it in the browser with Vite.
+- Reusable model configs: API URL, API key, model, and temperature live in one model pool.
+- User-configurable API heroines: each heroine selects a model config and keeps her own identity and system prompt.
+- Director agent: generates the opening story, can regenerate it, and silently updates plot state after conversations.
+- Galgame dialogue flow: one or two lines per page, with Back, Next, Auto, Full, History, Raw, and Skip controls.
+- Harem Mode: send one line to all heroines; later heroines can see earlier heroine replies in that turn.
+- VN stage rules: user lines and narration show only the background; heroine lines show the speaking heroine; multi-heroine turns show all participating heroines with the current speaker highlighted.
+- Local visual assets: bundled sample background/portraits plus browser file picker for custom images.
 
-- Web-first React/Vite app.
-- Visual novel dialogue playback: one or two lines per page, click/Next/Space to advance.
-- Persistent VN controls: Back, Next, Auto, Full, History, Raw, Skip.
-- API Companion agents with configurable API URL, API key, model, temperature, identity, and system prompt.
-- OpenAI-compatible Chat Completions support.
-- Harem Mode: send one message to every API Companion; later characters can see earlier character replies.
-- Dynamic stage speaker: portrait, name, and accent follow the current responding character.
-- Local browser state via `localStorage`.
-- Desktop Local Bridge for local CLI work agents: Codex, Claude Code, Cursor Agent.
-- Markdown session export.
-- Built-in sample assets for Web and Desktop testing.
-
-## Quick Start
-
-Install dependencies:
+## Run
 
 ```bash
 npm install
-```
-
-Run the Web app:
-
-```bash
 npm run dev
 ```
 
-Open the URL printed by Vite, usually:
+Open the printed Vite URL, usually:
 
 ```text
-http://127.0.0.1:5173
+http://127.0.0.1:5173/
 ```
 
-Production build:
+For the current local test server used during development, port `5199` may also be running:
+
+```text
+http://127.0.0.1:5199/
+```
+
+## Basic Flow
+
+1. Open `Settings`.
+2. Configure one or more model configs with API URL, API key, model, and temperature.
+3. Pick a model config for the Director Agent.
+4. Configure one or more heroines with a model config, personality, and identity.
+5. On the first screen, generate or regenerate the opening story.
+6. Enter the story and click through dialogue like a visual novel.
+7. Toggle Harem Mode when you want every heroine to answer in sequence.
+
+The API endpoint should be OpenAI-compatible. You can enter either a base `/v1` URL or a full `/v1/chat/completions` URL; the local Vite proxy normalizes it and avoids browser CORS failures.
+
+## Director Agent
+
+The director is a hidden story manager. It does two things:
+
+- Opening generation: creates the initial scene, atmosphere, relationship setup, and conflict seed.
+- Silent updates: after user and heroine dialogue, it summarizes the new story state so later responses stay continuous.
+
+The director does not speak directly in the chat after the opening. It updates story memory in the background.
+
+## Heroines
+
+Each heroine is an API character with:
+
+- display name and character name
+- identity/personality text
+- selected model config
+- portrait, accent color, and system prompt
+
+Default heroines are sample API characters only. They do not include any API credentials.
+
+## Commands
 
 ```bash
-npm run build
-npm run preview
+npm run dev          # Start web app
+npm run build        # Typecheck and build
+npm run preview      # Preview production build
+npm run test:smoke   # Core state/prompt/dialogue tests
 ```
 
-## Configure An API Companion
-
-In GalCode:
-
-1. Open `Menu`.
-2. Open `Settings`.
-3. Click `Add Companion`.
-4. Set `Agent Type` to `API Companion`.
-5. Fill:
-   - `API URL`, for example `https://api.example.com/v1`
-   - `API Key`
-   - `Model`
-   - `Temperature`
-   - `Personality / System Prompt`
-
-The API URL can be either a base URL ending in `/v1` or a full `/chat/completions` endpoint. GalCode normalizes both.
-
-In local Web development, GalCode posts to the same-origin `/api/galcode/chat` proxy provided by Vite, then the proxy calls the configured upstream API. This avoids browser CORS failures for local use. A hosted deployment should provide an equivalent server-side proxy.
-
-## Harem Mode
-
-Use `Menu -> Harem Mode` to toggle group mode.
-
-When enabled:
-
-- The input targets all API Companions.
-- Characters respond one by one in agent list order.
-- Each later character receives the user message plus earlier character replies from the same turn.
-- The stage portrait and accent switch to the currently speaking character.
-
-CLI work agents are not called in Harem Mode.
-
-## Desktop Local Bridge
-
-The browser cannot directly execute local CLI tools or inspect arbitrary local folders. For local coding agents, use:
-
-```bash
-npm run start:desktop
-```
-
-For desktop development with Vite hot reload:
-
-```bash
-npm run dev:desktop
-```
-
-Desktop bridge features include:
-
-- Codex CLI
-- Claude Code CLI
-- Cursor Agent CLI
-- `/login` terminal launch
-- local workspace picker
-- local image picker
-- local theme folder import
-- `galcode-asset://` file loading
-
-## CLI Work Agents
-
-Default local work agents:
-
-| Agent | Login command | Default command |
-| --- | --- | --- |
-| Codex | `codex login` | `codex exec --json --color never --skip-git-repo-check "{prompt}"` |
-| Claude Code | `claude auth login` | `claude -p --output-format text "{prompt}"` |
-| Cursor Agent | `cursor-agent login` | `cursor-agent --print --output-format text --trust "{prompt}"` |
-
-CLI agents require Desktop Local Bridge. In pure Web mode they are visible as configurable characters but cannot run local commands.
-
-## Useful Commands
-
-```bash
-npm run dev
-npm run dev:desktop
-npm run start:desktop
-npm run build
-npm run test:smoke
-npm run test:runtime
-npm run test:agents
-npm run doctor
-```
-
-`test:agents` calls local CLI tools and expects them to be installed and logged in.
-
-## Project Structure
+## Project Layout
 
 ```text
 src/
-  App.tsx            Main visual-novel UI and app state
-  core.ts            Defaults, helpers, transcript export
-  styles.css         Galgame styling
-  types.ts           Shared types
+  App.tsx        Web galgame UI and API orchestration
+  core.ts        Default heroines, director prompts, state migration, dialogue helpers
+  styles.css     Visual novel layout and panels
+  types.ts       Shared state and transcript types
 
-electron/
-  main.cjs           Desktop Local Bridge, CLI launch, API proxy path
-  preload.cjs        Renderer bridge
-  agent-runtime.cjs  CLI command parsing and asset scanning
-
-sample-assets/       Web/Desktop sample backgrounds and sprites
-scripts/             Tests and local tooling
-docs/                Planning and asset notes
-themes/              Theme metadata
+vite.config.ts   Local chat-completions proxy
+sample-assets/   Bundled placeholder backgrounds and character sprites
+scripts/         Smoke/runtime helper tests
 ```
 
 ## Notes
 
-- API keys are stored in local state for the MVP. Treat this as a local prototype, not a hardened multi-user deployment.
-- Web mode can use bundled assets and user-selected local image files through the browser file picker. Arbitrary local folder scanning still belongs to Desktop Local Bridge.
-- The sample assets are for local MVP testing; see `sample-assets/CREDITS.md`.
+- API keys are stored only in local app state during development. Do not commit real keys.
+- The current sample art is placeholder material and can be replaced through Settings.
+- The old local coding-agent path has been removed from the product UI; GalCode is now focused on API-driven conversation galgame play.

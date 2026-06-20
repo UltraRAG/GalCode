@@ -10,9 +10,9 @@
 
 ## Character Sprites
 
-- `characters/codex-codel-sprite-ccby-lisadicaprio.png`
-- `characters/claude-codel-sprite-ccby-lisadicaprio.png`
-- `characters/cursor-codel-sprite-ccby-lisadicaprio.png`
+- `characters/koharu-sprite-ccby-lisadicaprio.png`
+- `characters/shiori-sprite-ccby-lisadicaprio.png`
+- `characters/akari-sprite-ccby-lisadicaprio.png`
 - Source: https://opengameart.org/content/codel-visual-novel-sprite
 - Author: LisadiKaprio
 - License: CC-BY 4.0

@@ -7,6 +7,7 @@ export type AgentConfig = {
   name: string;
   characterName: string;
   role: string;
+  userDescription?: string;
   command: string;
   args: string;
   mode: AgentMode;
@@ -14,6 +15,7 @@ export type AgentConfig = {
   modelNote: string;
   portraitPath?: string;
   custom?: boolean;
+  modelConfigId?: string;
   apiUrl?: string;
   apiKey?: string;
   model?: string;
@@ -27,6 +29,7 @@ export type TranscriptEntry = {
   speaker: "user" | "agent" | "system";
   text: string;
   at: string;
+  visibleAgentIds?: string[];
   stream?: "stdout" | "stderr";
   runId?: string;
 };
@@ -43,17 +46,76 @@ export type RunRecord = {
   outputChars: number;
 };
 
+export type StoryState = {
+  title: string;
+  opening: string;
+  summary: string;
+  currentBeat: string;
+  generatedAt: string;
+  updatedAt?: string;
+};
+
+export type DirectorConfig = {
+  modelConfigId?: string;
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+  systemPrompt: string;
+};
+
+export type ModelConfig = {
+  id: string;
+  name: string;
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+};
+
+export type GalCodeSaveSnapshot = {
+  version: number;
+  workspace: string;
+  selectedAgentId: string;
+  themeId: string;
+  haremMode?: boolean;
+  storyStarted?: boolean;
+  story?: StoryState;
+  director?: DirectorConfig;
+  modelConfigs?: ModelConfig[];
+  assetPackPath?: string;
+  backgroundPath?: string;
+  agents: AgentConfig[];
+  transcripts: Record<string, TranscriptEntry[]>;
+  runs: Record<string, RunRecord[]>;
+};
+
+export type SaveRecord = {
+  id: string;
+  title: string;
+  savedAt: string;
+  storyTitle: string;
+  summary: string;
+  heroineNames: string[];
+  snapshot: GalCodeSaveSnapshot;
+};
+
 export type GalCodeState = {
   version: number;
   workspace: string;
   selectedAgentId: string;
   themeId: string;
   haremMode?: boolean;
+  storyStarted?: boolean;
+  story?: StoryState;
+  director?: DirectorConfig;
+  modelConfigs?: ModelConfig[];
   assetPackPath?: string;
   backgroundPath?: string;
   agents: AgentConfig[];
   transcripts: Record<string, TranscriptEntry[]>;
   runs: Record<string, RunRecord[]>;
+  saves?: SaveRecord[];
 };
 
 export type ChatContextEntry = {

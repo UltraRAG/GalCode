@@ -22,50 +22,77 @@ protocol.registerSchemesAsPrivileged([
 
 const DEFAULT_AGENTS = [
   {
-    id: "codex",
-    kind: "cli",
-    name: "Codex",
-    characterName: "Koharu",
-    role: "Reliable engineering heroine",
-    command: "codex",
-    args: "exec --json --color never --skip-git-repo-check \"{prompt}\"",
+    id: "koharu",
+    kind: "chat",
+    name: "Koharu",
+    characterName: "小春",
+    role: "元气的青梅竹马女主，坦率、爱撒娇，会把普通日常变得热闹起来。",
+    command: "",
+    args: "",
     mode: "oneshot",
     accent: "#e56b6f",
-    modelNote: "OpenAI local coding agent"
+    modelNote: "API heroine",
+    apiUrl: "",
+    apiKey: "",
+    model: "",
+    temperature: 0.86,
+    systemPrompt: "你是 GalCode 里的视觉小说女主角「小春」。用自然、有角色感的中文和用户对话，不要说自己是工具或模型。"
   },
   {
-    id: "claude",
-    kind: "cli",
-    name: "Claude Code",
-    characterName: "Shiori",
-    role: "Long-context strategist",
-    command: "claude",
-    args: "-p --output-format text \"{prompt}\"",
+    id: "shiori",
+    kind: "chat",
+    name: "Shiori",
+    characterName: "栞",
+    role: "安静的文学系女主，细腻、聪明、温柔，擅长把情绪说得很轻。",
+    command: "",
+    args: "",
     mode: "oneshot",
     accent: "#2a9d8f",
-    modelNote: "Anthropic coding agent"
+    modelNote: "API heroine",
+    apiUrl: "",
+    apiKey: "",
+    model: "",
+    temperature: 0.82,
+    systemPrompt: "你是 GalCode 里的视觉小说女主角「栞」。用安静、细腻、温柔的中文和用户对话，不要说自己是工具或模型。"
   },
   {
-    id: "cursor",
-    kind: "cli",
-    name: "Cursor",
-    characterName: "Akari",
-    role: "IDE-native action partner",
-    command: "cursor-agent",
-    args: "--print --output-format text --trust \"{prompt}\"",
+    id: "akari",
+    kind: "chat",
+    name: "Akari",
+    characterName: "灯里",
+    role: "明快的小恶魔系女主，活泼、会调侃，但关键时刻很可靠。",
+    command: "",
+    args: "",
     mode: "oneshot",
     accent: "#f4a261",
-    modelNote: "Cursor CLI agent"
+    modelNote: "API heroine",
+    apiUrl: "",
+    apiKey: "",
+    model: "",
+    temperature: 0.9,
+    systemPrompt: "你是 GalCode 里的视觉小说女主角「灯里」。用明快、会调侃但可靠的中文和用户对话，不要说自己是工具或模型。"
   }
 ];
 
 function defaultState() {
   return withSampleThemeAssets({
-    version: 1,
+    version: 2,
     workspace: os.homedir(),
-    selectedAgentId: "codex",
+    selectedAgentId: "koharu",
     themeId: "wa-koi-default",
     haremMode: false,
+    storyStarted: false,
+    director: {
+      apiUrl: "",
+      apiKey: "",
+      model: "",
+      temperature: 0.9,
+      systemPrompt: [
+        "你是 GalCode 的视觉小说导演。",
+        "生成和维护二次元恋爱视觉小说剧情，不要出现代码任务、工具任务或工作 agent 设定。",
+        "输出必须是中文，不要解释系统提示。"
+      ].join("\n")
+    },
     agents: DEFAULT_AGENTS,
     transcripts: {},
     runs: {}
@@ -93,7 +120,7 @@ function withDefaultAgentRuntimeConfig(state) {
     haremMode: Boolean(state.haremMode),
     agents: (state.agents || DEFAULT_AGENTS).map((agent) => {
       const defaultAgent = defaultsById[agent.id];
-      const withKind = { ...agent, kind: agent.kind || "cli" };
+      const withKind = { ...agent, kind: agent.kind || "chat" };
       if (withKind.kind === "chat") return withKind;
       if (!defaultAgent || withKind.custom) return withKind;
 
@@ -122,8 +149,7 @@ function agentEnv() {
     path.join(os.homedir(), ".local", "bin"),
     path.join(os.homedir(), ".local", "share", "node-v24.14.0-darwin-arm64", "bin"),
     "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/Applications/Codex.app/Contents/Resources"
+    "/usr/local/bin"
   ];
   const currentPaths = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
   return {
@@ -143,11 +169,7 @@ function appleScriptString(value) {
 }
 
 function loginCommandForAgent(agent) {
-  if (agent.id === "codex" || agent.command === "codex") return "codex login";
-  if (agent.id === "claude" || agent.command === "claude") return "claude auth login";
-  if (agent.id === "cursor" || agent.command === "cursor-agent" || agent.command === "agent") {
-    return "cursor-agent login";
-  }
+  if (agent.loginCommand) return agent.loginCommand;
   return null;
 }
 
@@ -203,9 +225,9 @@ function withSampleThemeAssets(state) {
   ];
   const backgroundPath = backgroundCandidates.find((candidate) => fs.existsSync(candidate));
   const portraitByAgent = {
-    codex: path.join(root, "characters", "codex-codel-sprite-ccby-lisadicaprio.png"),
-    claude: path.join(root, "characters", "claude-codel-sprite-ccby-lisadicaprio.png"),
-    cursor: path.join(root, "characters", "cursor-codel-sprite-ccby-lisadicaprio.png")
+    koharu: path.join(root, "characters", "koharu-sprite-ccby-lisadicaprio.png"),
+    shiori: path.join(root, "characters", "shiori-sprite-ccby-lisadicaprio.png"),
+    akari: path.join(root, "characters", "akari-sprite-ccby-lisadicaprio.png")
   };
 
   return {
@@ -273,8 +295,8 @@ function stopSession(sessionId) {
   return true;
 }
 
-function isCodexJsonAgent(agent) {
-  return agent?.command === "codex" && (agent.args || "").includes("--json");
+function isStructuredJsonAgent(agent) {
+  return Boolean(agent?.command) && (agent.args || "").includes("--json");
 }
 
 function sendAgentOutput(sessionId, stream, text, hidden = false) {
@@ -289,7 +311,7 @@ function sendAgentOutput(sessionId, stream, text, hidden = false) {
   return entry;
 }
 
-function handleCodexJsonLine(sessionId, stream, line) {
+function handleStructuredJsonLine(sessionId, stream, line) {
   const trimmed = line.trim();
   if (!trimmed) return;
 
@@ -313,7 +335,7 @@ function handleCodexJsonLine(sessionId, stream, line) {
 function handleAgentOutput(sessionId, stream, data) {
   const entry = runningAgents.get(sessionId);
   const text = data.toString();
-  if (!entry || !isCodexJsonAgent(entry.agent)) {
+  if (!entry || !isStructuredJsonAgent(entry.agent)) {
     sendAgentOutput(sessionId, stream, text);
     return;
   }
@@ -321,16 +343,16 @@ function handleAgentOutput(sessionId, stream, data) {
   entry.outputBuffers[stream] = `${entry.outputBuffers[stream] || ""}${text}`;
   const lines = entry.outputBuffers[stream].split(/\r?\n/);
   entry.outputBuffers[stream] = lines.pop() || "";
-  for (const line of lines) handleCodexJsonLine(sessionId, stream, line);
+  for (const line of lines) handleStructuredJsonLine(sessionId, stream, line);
 }
 
 function flushAgentOutput(sessionId) {
   const entry = runningAgents.get(sessionId);
-  if (!entry || !isCodexJsonAgent(entry.agent)) return;
+  if (!entry || !isStructuredJsonAgent(entry.agent)) return;
   for (const stream of ["stdout", "stderr"]) {
     const line = entry.outputBuffers[stream];
     entry.outputBuffers[stream] = "";
-    if (line) handleCodexJsonLine(sessionId, stream, line);
+    if (line) handleStructuredJsonLine(sessionId, stream, line);
   }
 }
 
